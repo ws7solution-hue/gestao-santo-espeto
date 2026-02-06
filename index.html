@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Santo Espeto - Gestão v17.7 (Comparador de Preços)</title>
+    <title>Santo Espeto - Gestão v19.2 (Estável)</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -27,6 +27,9 @@
         .text-saque { color: #d32f2f; } 
         .text-aporte { color: #0277bd; font-weight: bold; }
 
+        .alerta-estoque { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
         #loading-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.95); z-index:9999; display:flex; justify-content:center; align-items:center; flex-direction: column; }
         
         @media (max-width: 768px) { .sidebar { width: 100%; height: auto; position: relative; } .content { margin-left: 0; } }
@@ -43,7 +46,7 @@
     <div class="sidebar">
         <div class="text-center mb-4">
             <h3 class="mt-2"><i class="fas fa-fire"></i> Santo Espeto</h3>
-            <small>Gestão Cloud v17.7</small>
+            <small>Gestão Cloud v19.2</small>
         </div>
         <a href="#" onclick="showSection('dashboard')" class="nav-link active"><i class="fas fa-chart-line"></i> Dashboard</a>
         <a href="#" onclick="showSection('extrato')" class="nav-link"><i class="fas fa-university"></i> Extrato Detalhado</a>
@@ -54,6 +57,10 @@
     </div>
 
     <div class="content">
+        <div id="alert-estoque-baixo" class="alert alert-danger d-none shadow-sm fw-bold">
+            <i class="fas fa-exclamation-triangle"></i> Atenção: Existem itens com estoque baixo! Verifique a aba de Compras.
+        </div>
+
         <div id="dashboard" class="section">
             <h2>📊 Visão Geral</h2>
             <hr>
@@ -71,9 +78,10 @@
             <div class="row mb-4 g-3">
                 <div class="col-md-3"><div class="card card-custom bg-gradient-red p-3"><small>Total Comprado</small><h2 id="dash-gastos">R$ 0,00</h2></div></div>
                 <div class="col-md-3"><div class="card card-custom bg-gradient-green p-3"><small>Total Vendido</small><h2 id="dash-faturamento">R$ 0,00</h2></div></div>
-                <div class="col-md-3"><div class="card card-custom bg-gradient-brown p-3"><small>Lucro Operacional</small><h2 id="dash-lucro">R$ 0,00</h2></div></div>
+                <div class="col-md-3"><div class="card card-custom bg-gradient-brown p-3"><small>Lucro Líquido*</small><h2 id="dash-lucro">R$ 0,00</h2></div></div>
                 <div class="col-md-3"><div class="card card-custom bg-secondary text-white p-3"><small>Saldo em Caixa</small><h2 id="dash-caixa">R$ 0,00</h2></div></div>
             </div>
+            <small class="text-muted">*Lucro Líquido já desconta custos, margens e taxas de cartão.</small>
         </div>
 
         <div id="extrato" class="section d-none">
@@ -104,12 +112,13 @@
                         <ul class="list-group list-group-flush small">
                             <li class="list-group-item d-flex justify-content-between"><span class="text-success">Entradas</span><span id="res-entradas">R$ 0,00</span></li>
                             <li class="list-group-item d-flex justify-content-between"><span class="text-danger">Saídas</span><span id="res-saidas">R$ 0,00</span></li>
+                            <li class="list-group-item d-flex justify-content-between"><span class="text-warning">Taxas Cartão</span><span id="res-taxas">R$ 0,00</span></li>
                             <li class="list-group-item d-flex justify-content-between"><strong>Saldo</strong><strong id="res-saldo">R$ 0,00</strong></li>
                         </ul>
                     </div>
                 </div>
             </div>
-            <div class="card card-custom p-3"><div class="table-responsive"><table class="table table-striped table-sm"><thead class="table-dark"><tr><th>Data</th><th>Cód/Tipo</th><th>Descrição</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="tabela-extrato"></tbody></table></div></div>
+            <div class="card card-custom p-3"><div class="table-responsive"><table class="table table-striped table-sm"><thead class="table-dark"><tr><th>Data</th><th>Tipo/Pag.</th><th>Descrição</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="tabela-extrato"></tbody></table></div></div>
         </div>
 
         <div id="insumos" class="section d-none">
@@ -132,11 +141,29 @@
 
                     <div class="col-md-2"><label>Unidade</label><select id="ins-unidade" class="form-select"><option value="un">Un</option><option value="kg">kg</option><option value="g">g</option><option value="lt">lt</option></select></div>
                     <div class="col-md-2"><label>Valor Pago</label><input type="text" id="ins-valor-pago" class="form-control" placeholder="Ex: 25,90"></div>
+                    
+                    <div class="col-md-1 bg-warning bg-opacity-10 p-1 rounded text-center">
+                        <label class="small fw-bold text-dark" title="Adiciona uma % de segurança no custo">Margem(%)</label>
+                        <input type="number" id="ins-margem" class="form-control form-control-sm text-center border-warning" placeholder="0" value="0">
+                    </div>
+                     <div class="col-md-1 bg-danger bg-opacity-10 p-1 rounded text-center">
+                        <label class="small fw-bold text-dark" title="Avisa quando chegar nesse valor">Mínimo</label>
+                        <input type="number" id="ins-estoque-min" class="form-control form-control-sm text-center border-danger" placeholder="5" value="5">
+                    </div>
+
                     <div class="col-md-1"><button onclick="salvarInsumo()" id="btn-salvar-insumo" class="btn btn-primary w-100 fw-bold"><i class="fas fa-check"></i></button></div>
                 </div>
-                <div class="mt-2 text-primary fw-bold" id="preview-custo"><i class="fas fa-calculator"></i> Custo Unitário: R$ 0,000</div>
+                <div class="mt-2 d-flex justify-content-between">
+                    <div class="text-primary fw-bold" id="preview-custo"><i class="fas fa-calculator"></i> Real: R$ 0,000</div>
+                    <div class="text-danger fw-bold" id="preview-custo-op"><i class="fas fa-chart-line"></i> Operacional (c/ margem): R$ 0,000</div>
+                </div>
             </div>
-            <div class="card card-custom p-3"><table class="table table-hover align-middle"><thead class="table-light"><tr><th>Item</th><th>Valor Total</th><th>Custo Unit.</th><th>Estoque</th><th class="text-end">Ações</th></tr></thead><tbody id="tabela-insumos"></tbody></table></div>
+            <div class="card card-custom p-3">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light"><tr><th>Item</th><th>Custo Real</th><th>Custo Op.</th><th>Estoque</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+                    <tbody id="tabela-insumos"></tbody>
+                </table>
+            </div>
         </div>
 
         <div id="produtos" class="section d-none">
@@ -178,13 +205,13 @@
                         <ul id="lista-ingredientes-temp" class="list-group mb-3 small"></ul>
                         
                         <div class="alert alert-secondary p-1 text-center">
-                            Custo: <strong id="prod-custo-total">R$ 0,00</strong> | Lucro: <strong id="prod-lucro-previsto" class="text-success">R$ 0,00</strong>
+                            Custo Op: <strong id="prod-custo-total">R$ 0,00</strong> | Lucro: <strong id="prod-lucro-previsto" class="text-success">R$ 0,00</strong>
                         </div>
                         
                         <button type="button" id="btn-salvar-prod" class="btn btn-success w-100">Salvar Produto/Combo</button>
                     </div>
                 </div>
-                <div class="col-md-7"><div class="card card-custom p-3"><table class="table table-hover align-middle"><thead class="table-light"><tr><th>Produto</th><th>Venda</th><th>Lucro</th><th class="text-end">Ações</th></tr></thead><tbody id="tabela-produtos"></tbody></table></div></div>
+                <div class="col-md-7"><div class="card card-custom p-3"><table class="table table-hover align-middle"><thead class="table-light"><tr><th>Produto</th><th>Venda</th><th>Lucro Real*</th><th class="text-end">Ações</th></tr></thead><tbody id="tabela-produtos"></tbody></table><small class="text-muted">*Lucro considerando a margem de perda dos insumos.</small></div></div>
             </div>
         </div>
 
@@ -216,6 +243,23 @@
                             </table>
                         </div>
                         <hr>
+                        
+                        <div class="row g-2 align-items-center mb-3 p-2 bg-light rounded">
+                            <div class="col-md-6">
+                                <label class="fw-bold">Forma Pagamento</label>
+                                <select id="pdv-forma-pagamento" class="form-select" onchange="toggleTaxaInput()">
+                                    <option value="DINHEIRO">Dinheiro</option>
+                                    <option value="PIX">PIX</option>
+                                    <option value="DEBITO">Cartão Débito</option>
+                                    <option value="CREDITO">Cartão Crédito</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 d-none" id="div-taxa-maquina">
+                                <label class="fw-bold text-danger">Taxa Maquininha (%)</label>
+                                <input type="number" id="pdv-taxa-valor" class="form-control border-danger" value="0" placeholder="Ex: 4.5">
+                            </div>
+                        </div>
+
                         <div class="d-flex justify-content-between align-items-center">
                             <h4 class="text-muted">Total:</h4>
                             <h2 id="pdv-total">R$ 0,00</h2>
@@ -288,9 +332,14 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // VARIÁVEIS
-        let insumos = [], produtos = [], vendas = [], movCaixa = [], listaAnotacoes = [];
-        let ingredientesTemp = [], carrinho = [];
+        // VARIÁVEIS GLOBAIS
+        let insumos = [];
+        let produtos = [];
+        let vendas = [];
+        let movCaixa = [];
+        let listaAnotacoes = [];
+        let ingredientesTemp = [];
+        let carrinho = [];
 
         // HELPER
         function parseMoney(val) {
@@ -303,70 +352,262 @@
             return parseFloat(str) || 0;
         }
 
-        // --- INIT ---
-        async function init() {
-            try {
-                setTimeout(() => { document.getElementById('loading-overlay').style.display = 'none'; }, 8000);
-
-                await carregarDados();
-                atualizarTabelas();
-                atualizarDashboard();
-                limparFiltrosExtrato();
-                renderAnotacoes();
-                
-                // EVENTOS CORRIGIDOS (EVITA DUPLICAÇÃO)
-                const btnAdd = document.getElementById('btn-add-ingrediente');
-                if(btnAdd) {
-                    btnAdd.replaceWith(btnAdd.cloneNode(true)); 
-                    document.getElementById('btn-add-ingrediente').addEventListener('click', addItemAoProduto);
-                }
-
-                const btnSalvar = document.getElementById('btn-salvar-prod');
-                if(btnSalvar) {
-                     btnSalvar.replaceWith(btnSalvar.cloneNode(true));
-                     document.getElementById('btn-salvar-prod').addEventListener('click', salvarProdutoFinal);
-                }
-
-                const inputPreco = document.getElementById('prod-preco');
-                if(inputPreco) inputPreco.addEventListener('input', renderIngredientesTemp);
-
-                document.getElementById('anot-data').value = new Date().toISOString().split('T')[0];
-                document.getElementById('loading-overlay').style.display = 'none';
-            } catch (error) {
-                console.error("ERRO:", error);
-                alert("Erro ao conectar: " + error.message);
-                document.getElementById('loading-overlay').style.display = 'none';
+        function mostrarLoad(ativo) {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) {
+                overlay.style.display = ativo ? 'flex' : 'none';
             }
         }
-        
+
+        // --- LÓGICA DE CARREGAMENTO ---
         async function carregarDados() {
-            const [sIns, sProd, sVen, sMov, sAnot] = await Promise.all([
-                getDocs(collection(db, "insumos")),
-                getDocs(collection(db, "produtos")),
-                getDocs(collection(db, "vendas")),
-                getDocs(collection(db, "mov_caixa")),
-                getDocs(collection(db, "anotacoes_precos"))
-            ]);
-            insumos = sIns.docs.map(d => ({ id: d.id, ...d.data() }));
-            produtos = sProd.docs.map(d => ({ id: d.id, ...d.data() }));
-            vendas = sVen.docs.map(d => ({ id: d.id, ...d.data() }));
-            movCaixa = sMov.docs.map(d => ({ id: d.id, ...d.data() }));
-            listaAnotacoes = sAnot.docs.map(d => ({ id: d.id, ...d.data() }));
+            try {
+                const [sIns, sProd, sVen, sMov, sAnot] = await Promise.all([
+                    getDocs(collection(db, "insumos")),
+                    getDocs(collection(db, "produtos")),
+                    getDocs(collection(db, "vendas")),
+                    getDocs(collection(db, "mov_caixa")),
+                    getDocs(collection(db, "anotacoes_precos"))
+                ]);
+                insumos = sIns.docs.map(d => ({ id: d.id, ...d.data() }));
+                produtos = sProd.docs.map(d => ({ id: d.id, ...d.data() }));
+                vendas = sVen.docs.map(d => ({ id: d.id, ...d.data() }));
+                movCaixa = sMov.docs.map(d => ({ id: d.id, ...d.data() }));
+                listaAnotacoes = sAnot.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (e) {
+                console.error("Erro ao carregar dados:", e);
+                alert("Erro ao carregar dados. Verifique sua internet.");
+            }
         }
 
-        // --- LÓGICA DE PRODUTOS/COMBOS ---
-        window.toggleTipoAdd = function() {
+        function recalcularCustosProdutos() {
+            if(!produtos || produtos.length === 0) return;
+            produtos.forEach(p => {
+                if(p.receita) {
+                    let novoCusto = 0;
+                    p.receita.forEach(item => {
+                        let custoItemUnit = 0;
+                        if(item.tipo === 'produto') {
+                            let subP = produtos.find(x => x.id === item.id);
+                            custoItemUnit = subP ? (subP.custo || 0) : 0;
+                        } else {
+                            let ins = insumos.find(x => x.id === item.id);
+                            custoItemUnit = ins ? (ins.custoOperacional || ins.custoUnitario || 0) : 0;
+                        }
+                        novoCusto += custoItemUnit * item.qtd;
+                    });
+                    p.custo = novoCusto;
+                }
+            });
+        }
+
+        // --- INTERFACE / TABELAS ---
+        function atualizarTabelas() {
+            // Atualiza Selects
+            let selInsumo = document.getElementById('select-insumo-add'); 
+            let selProd = document.getElementById('select-produto-add');
+            
+            if(selInsumo) {
+                selInsumo.innerHTML = ''; 
+                insumos.forEach(i => selInsumo.innerHTML += `<option value="${i.id}">${i.nome}</option>`);
+            }
+            if(selProd) {
+                selProd.innerHTML = ''; 
+                produtos.forEach(p => selProd.innerHTML += `<option value="${p.id}">${p.nome}</option>`);
+            }
+            
+            // Tabela Insumos
+            let alertaAtivo = false;
+            let tbodyInsumos = document.getElementById('tabela-insumos');
+            if(tbodyInsumos) {
+                tbodyInsumos.innerHTML = insumos.map(i => {
+                    let custoOp = i.custoOperacional ? i.custoOperacional : i.custoUnitario;
+                    let minimo = i.estoqueMinimo || 0;
+                    let critico = i.estoque <= minimo;
+                    if(critico) alertaAtivo = true;
+
+                    return `<tr class="${critico ? 'table-danger' : ''}">
+                        <td>${i.nome}</td>
+                        <td>R$ ${i.custoUnitario.toFixed(3)}</td>
+                        <td class="text-danger fw-bold">R$ ${custoOp.toFixed(3)} <small class="text-dark">(${i.margemPerda||0}%)</small></td>
+                        <td>${i.estoque.toFixed(1)} ${i.unidade}</td>
+                        <td>${critico ? '<span class="badge bg-danger alerta-estoque">Baixo!</span>' : '<span class="badge bg-success">Ok</span>'}</td>
+                        <td class="text-end">
+                            <button onclick="window.editarInsumo('${i.id}')" class="btn btn-sm btn-outline-warning"><i class="fas fa-pen"></i></button> 
+                            <button onclick="window.excluirInsumo('${i.id}')" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                        </td>
+                    </tr>`;
+                }).join('');
+            }
+            
+            let divAlerta = document.getElementById('alert-estoque-baixo');
+            if(divAlerta) {
+                if(alertaAtivo) divAlerta.classList.remove('d-none'); else divAlerta.classList.add('d-none');
+            }
+
+            // Tabela Produtos e PDV
+            let sPdv = document.getElementById('pdv-produto'); 
+            if(sPdv) sPdv.innerHTML = '';
+            
+            let tbodyProdutos = document.getElementById('tabela-produtos');
+            if(tbodyProdutos) {
+                tbodyProdutos.innerHTML = produtos.map(p => { 
+                    if(sPdv) sPdv.innerHTML += `<option value="${p.id}">${p.nome}</option>`; 
+                    let lucro = p.preco - (p.custo || 0); 
+                    return `<tr>
+                        <td>${p.nome}</td>
+                        <td>R$ ${p.preco.toFixed(2)}</td>
+                        <td class="${lucro < 0 ? 'text-danger' : 'text-success'} fw-bold">R$ ${lucro.toFixed(2)}</td>
+                        <td class="text-end">
+                            <button onclick="window.editarProduto('${p.id}')" class="btn btn-sm btn-outline-warning"><i class="fas fa-pen"></i></button> 
+                            <button onclick="window.excluirProduto('${p.id}')" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                        </td>
+                    </tr>`; 
+                }).join('');
+            }
+        }
+
+        function atualizarDashboard() {
+            let totalFat = vendas.reduce((acc, v) => acc + v.total, 0);
+            let totalTaxas = vendas.reduce((acc, v) => acc + (v.taxaAplicada || 0), 0);
+            let totalGastos = insumos.reduce((acc, i) => acc + (i.valorOriginal || 0), 0);
+            let totalLucro = vendas.reduce((acc, v) => acc + v.lucro, 0);
+            let totalAportes = movCaixa.filter(m => m.tipo === 'APORTE').reduce((acc, m) => acc + m.valor, 0);
+            let totalSaques = movCaixa.filter(m => m.tipo === 'SAQUE').reduce((acc, m) => acc + m.valor, 0);
+            
+            let caixaReal = totalFat - totalTaxas + totalAportes - totalGastos - totalSaques;
+
+            const elFat = document.getElementById('dash-faturamento');
+            const elGastos = document.getElementById('dash-gastos');
+            const elLucro = document.getElementById('dash-lucro');
+            const elCaixa = document.getElementById('dash-caixa');
+
+            if(elFat) elFat.innerText = `R$ ${totalFat.toFixed(2)}`;
+            if(elGastos) elGastos.innerText = `R$ ${totalGastos.toFixed(2)}`;
+            if(elLucro) elLucro.innerText = `R$ ${totalLucro.toFixed(2)}`;
+            if(elCaixa) elCaixa.innerText = `R$ ${caixaReal.toFixed(2)}`;
+        }
+
+        // --- FUNÇÕES DE INSUMOS ---
+        function calcularCustoPreview() {
+            let valor = parseMoney(document.getElementById('ins-valor-pago').value);
+            let qtd = parseMoney(document.getElementById('ins-qtd-pacote').value);
+            let margem = parseMoney(document.getElementById('ins-margem').value);
+            let custo = qtd > 0 ? valor / qtd : 0;
+            let custoOp = custo * (1 + (margem / 100));
+            document.getElementById('preview-custo').innerText = `Real: R$ ${custo.toFixed(4)}`;
+            document.getElementById('preview-custo-op').innerText = `Operacional: R$ ${custoOp.toFixed(4)}`;
+        }
+
+        function limparFormInsumo() {
+            document.getElementById('ins-nome').value = ''; 
+            document.getElementById('ins-valor-pago').value = '';
+            document.getElementById('ins-qtd-pacote').value = ''; 
+            document.getElementById('ins-margem').value = '0';
+            document.getElementById('ins-estoque-min').value = '5';
+            document.getElementById('preview-custo').innerText = 'Real: R$ 0,000';
+            document.getElementById('preview-custo-op').innerText = 'Operacional: R$ 0,000';
+            document.getElementById('ins-estoque-atual').value = ''; 
+        }
+
+        async function salvarInsumo() {
+            mostrarLoad(true);
+            try {
+                let idEdicao = document.getElementById('ins-id-edicao').value;
+                let nome = document.getElementById('ins-nome').value;
+                let qtd = parseMoney(document.getElementById('ins-qtd-pacote').value); 
+                let valor = parseMoney(document.getElementById('ins-valor-pago').value);
+                let un = document.getElementById('ins-unidade').value;
+                let estoqueManual = parseMoney(document.getElementById('ins-estoque-atual').value); 
+                let margem = parseMoney(document.getElementById('ins-margem').value);
+                let estoqueMin = parseMoney(document.getElementById('ins-estoque-min').value); 
+
+                if(!nome || !qtd || !valor) { 
+                    mostrarLoad(false); 
+                    return alert("Preencha todos os campos!"); 
+                }
+                
+                let custoUnitario = valor / qtd;
+                let custoOperacional = custoUnitario * (1 + (margem / 100));
+
+                let dados = { 
+                    nome, 
+                    unidade: un, 
+                    valorOriginal: valor, 
+                    qtdOriginal: qtd, 
+                    custoUnitario, 
+                    custoOperacional, 
+                    margemPerda: margem, 
+                    estoqueMinimo: estoqueMin 
+                };
+
+                if (idEdicao) {
+                    dados.estoque = estoqueManual;
+                    await updateDoc(doc(db, "insumos", idEdicao), dados);
+                    alert("Insumo atualizado!");
+                } else {
+                    dados.data = new Date().toISOString();
+                    dados.estoque = qtd;
+                    await addDoc(collection(db, "insumos"), dados);
+                    alert("Insumo cadastrado!");
+                }
+                await init(); 
+                limparFormInsumo(); 
+                cancelarEdicaoInsumo();
+            } catch (e) { 
+                console.error(e); 
+                alert("Erro ao salvar: " + e.message); 
+            }
+            mostrarLoad(false);
+        }
+
+        function editarInsumo(id) {
+            let item = insumos.find(i => i.id == id); 
+            if(!item) return;
+            document.getElementById('ins-id-edicao').value = item.id;
+            document.getElementById('ins-nome').value = item.nome;
+            document.getElementById('ins-qtd-pacote').value = item.qtdOriginal;
+            document.getElementById('ins-valor-pago').value = item.valorOriginal.toString().replace('.', ',');
+            document.getElementById('ins-unidade').value = item.unidade;
+            document.getElementById('ins-margem').value = item.margemPerda || 0;
+            document.getElementById('ins-estoque-min').value = item.estoqueMinimo || 5; 
+            document.getElementById('ins-estoque-atual').value = item.estoque;
+            document.getElementById('div-estoque-atual').classList.remove('d-none');
+            document.getElementById('titulo-form-insumo').innerText = "Editando: " + item.nome;
+            const btn = document.getElementById('btn-salvar-insumo');
+            btn.innerHTML = "<i class='fas fa-save'></i>";
+            btn.classList.replace('btn-primary', 'btn-warning');
+            document.getElementById('btn-cancelar-edicao').classList.remove('d-none');
+            calcularCustoPreview();
+            document.getElementById('insumos').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function cancelarEdicaoInsumo() {
+            limparFormInsumo();
+            document.getElementById('div-estoque-atual').classList.add('d-none');
+            document.getElementById('titulo-form-insumo').innerText = "Nova Compra";
+            const btn = document.getElementById('btn-salvar-insumo');
+            btn.innerHTML = "Cadastrar";
+            btn.classList.replace('btn-warning', 'btn-primary');
+            document.getElementById('btn-cancelar-edicao').classList.add('d-none');
+            document.getElementById('ins-id-edicao').value = "";
+        }
+
+        async function excluirInsumo(id) { 
+            if(!confirm("Excluir?")) return; 
+            mostrarLoad(true); 
+            await deleteDoc(doc(db, "insumos", id)); 
+            await init(); 
+            mostrarLoad(false); 
+        }
+
+        // --- FUNÇÕES DE PRODUTOS ---
+        function toggleTipoAdd() {
             let tipo = document.querySelector('input[name="tipoItemAdd"]:checked').value;
             let selInsumo = document.getElementById('select-insumo-add');
             let selProd = document.getElementById('select-produto-add');
-            
-            if(tipo === 'insumo') {
-                selInsumo.classList.remove('d-none');
-                selProd.classList.add('d-none');
-            } else {
-                selInsumo.classList.add('d-none');
-                selProd.classList.remove('d-none');
-            }
+            if(tipo === 'insumo') { selInsumo.classList.remove('d-none'); selProd.classList.add('d-none'); } 
+            else { selInsumo.classList.add('d-none'); selProd.classList.remove('d-none'); }
         }
 
         function addItemAoProduto() {
@@ -374,14 +615,13 @@
             let qtdInput = document.getElementById('qtd-insumo-add');
             let qtd = parseMoney(qtdInput.value);
             if (qtd <= 0) return alert("Qtd inválida!");
-
             let item, id, nome, custo;
 
             if (tipo === 'insumo') {
                 id = document.getElementById('select-insumo-add').value;
                 if (!id) return alert("Selecione um Insumo!");
                 item = insumos.find(i => i.id == id);
-                custo = parseMoney(item.custoUnitario);
+                custo = item.custoOperacional ? item.custoOperacional : parseMoney(item.custoUnitario);
                 nome = item.nome;
             } else {
                 id = document.getElementById('select-produto-add').value;
@@ -390,26 +630,17 @@
                 custo = item.custo || 0; 
                 nome = item.nome + " (Pronto)";
             }
-
             if (!item) return alert("Item não encontrado.");
 
-            ingredientesTemp.push({
-                tipo: tipo,
-                id: item.id,
-                nome: nome,
-                custoUnit: custo,
-                qtd: qtd,
-                custoTotal: custo * qtd
-            });
-
+            ingredientesTemp.push({ tipo, id: item.id, nome, custoUnit: custo, qtd, custoTotal: custo * qtd });
             renderIngredientesTemp();
             qtdInput.value = "1"; 
         }
 
-        window.removerIngrediente = function(index) {
+        function removerIngrediente(index) {
             ingredientesTemp.splice(index, 1);
             renderIngredientesTemp();
-        };
+        }
 
         function renderIngredientesTemp() {
             let ul = document.getElementById('lista-ingredientes-temp');
@@ -419,13 +650,9 @@
             ul.innerHTML = ingredientesTemp.map((i, idx) => `
                 <li class="list-group-item d-flex justify-content-between p-1">
                     <span>${i.qtd}x ${i.nome} <span class="badge bg-secondary">${i.tipo === 'produto' ? 'COMBO' : 'MP'}</span></span>
-                    <span>
-                        <small class="text-muted">R$ ${i.custoTotal.toFixed(2)}</small> 
-                        <i class="fas fa-times text-danger ms-2" onclick="window.removerIngrediente(${idx})" style="cursor:pointer"></i>
-                    </span>
+                    <span><small class="text-muted">R$ ${i.custoTotal.toFixed(2)}</small> <i class="fas fa-times text-danger ms-2" onclick="window.removerIngrediente(${idx})" style="cursor:pointer"></i></span>
                 </li>
             `).join('');
-
             document.getElementById('prod-custo-total').innerText = `R$ ${custoTotal.toFixed(2)}`;
             let lucro = precoVenda - custoTotal;
             let elLucro = document.getElementById('prod-lucro-previsto');
@@ -435,79 +662,103 @@
 
         async function salvarProdutoFinal() {
             mostrarLoad(true);
-            let idEdicao = document.getElementById('prod-id-edicao').value;
-            let nome = document.getElementById('prod-nome').value;
-            let preco = parseMoney(document.getElementById('prod-preco').value);
-            let custo = ingredientesTemp.reduce((acc, i) => acc + i.custoTotal, 0);
-            
-            if(!nome) { mostrarLoad(false); return alert("Preencha o nome!"); }
-
-            let dados = { nome, preco, custo, receita: ingredientesTemp };
-
             try {
-                if (idEdicao) {
-                    await updateDoc(doc(db, "produtos", idEdicao), dados);
-                    alert("Atualizado! (Estoque inalterado)");
-                } else {
-                    await addDoc(collection(db, "produtos"), dados);
-                    alert("Criado! (Estoque inalterado)");
-                }
-                cancelarEdicaoProduto();
+                let idEdicao = document.getElementById('prod-id-edicao').value;
+                let nome = document.getElementById('prod-nome').value;
+                let preco = parseMoney(document.getElementById('prod-preco').value);
+                let custo = ingredientesTemp.reduce((acc, i) => acc + i.custoTotal, 0);
+                if(!nome) { mostrarLoad(false); return alert("Preencha o nome!"); }
+                let dados = { nome, preco, custo, receita: ingredientesTemp };
+
+                if (idEdicao) { await updateDoc(doc(db, "produtos", idEdicao), dados); alert("Atualizado!"); } 
+                else { await addDoc(collection(db, "produtos"), dados); alert("Criado!"); }
+                
+                cancelarEdicaoProduto(); 
                 await init();
             } catch (e) { console.error(e); alert("Erro ao salvar: " + e.message); }
             mostrarLoad(false);
         }
 
-        // --- PDV ---
+        function editarProduto(id) {
+            let prod = produtos.find(p => p.id === id); 
+            if(!prod) return;
+            document.getElementById('prod-id-edicao').value = prod.id;
+            document.getElementById('prod-nome').value = prod.nome;
+            document.getElementById('prod-preco').value = prod.preco.toString().replace('.', ',');
+            
+            ingredientesTemp = prod.receita ? JSON.parse(JSON.stringify(prod.receita)) : [];
+            ingredientesTemp.forEach(i => { if(!i.tipo) i.tipo = 'insumo'; });
+
+            renderIngredientesTemp();
+            document.getElementById('titulo-form-prod').innerText = "Editando: " + prod.nome;
+            const btn = document.getElementById('btn-salvar-prod');
+            btn.innerText = "Salvar Alteração";
+            btn.classList.replace('btn-success', 'btn-warning');
+            document.getElementById('btn-cancelar-prod').classList.remove('d-none');
+        }
+
+        function cancelarEdicaoProduto() {
+            document.getElementById('prod-id-edicao').value = "";
+            document.getElementById('prod-nome').value = "";
+            document.getElementById('prod-preco').value = "";
+            ingredientesTemp = []; renderIngredientesTemp();
+            document.getElementById('titulo-form-prod').innerText = "Novo Produto";
+            const btn = document.getElementById('btn-salvar-prod');
+            btn.innerText = "Salvar Produto";
+            btn.classList.replace('btn-warning', 'btn-success');
+            document.getElementById('btn-cancelar-prod').classList.add('d-none');
+        }
+
+        async function excluirProduto(id) { 
+            if(!confirm("Excluir?")) return; 
+            mostrarLoad(true); 
+            await deleteDoc(doc(db, "produtos", id)); 
+            await init(); 
+            mostrarLoad(false); 
+        }
+
+        // --- FUNÇÕES DE PDV ---
         function addCarrinho() {
             let id = document.getElementById('pdv-produto').value;
             let qtd = parseInt(document.getElementById('pdv-qtd').value);
             let p = produtos.find(x => x.id == id);
-            
             if(!p) return alert("Selecione um produto!");
-            let custoProd = p.custo || 0;
-
+            let custoProd = p.custo || 0; 
             carrinho.push({ ...p, qtdVenda: qtd, custoUnitarioReal: custoProd });
             renderCarrinho();
         }
 
         function renderCarrinho() {
-            let tbody = document.getElementById('pdv-carrinho');
+            let tbody = document.getElementById('pdv-carrinho'); 
             tbody.innerHTML = '';
             let total = 0;
-
             carrinho.forEach((item, index) => {
                 let subtotal = item.preco * item.qtdVenda;
                 let lucroLiquido = (item.preco - item.custoUnitarioReal) * item.qtdVenda;
                 total += subtotal;
-
-                tbody.innerHTML += `
-                    <tr>
-                        <td>${item.qtdVenda}x ${item.nome}</td>
-                        <td>R$ ${subtotal.toFixed(2)}</td>
-                        <td class="text-success fw-bold">R$ ${lucroLiquido.toFixed(2)}</td>
-                        <td class="text-end">
-                            <button onclick="window.removerItemCarrinho(${index})" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
-                        </td>
-                    </tr>
-                `;
+                tbody.innerHTML += `<tr><td>${item.qtdVenda}x ${item.nome}</td><td>R$ ${subtotal.toFixed(2)}</td><td class="${lucroLiquido < 0 ? 'text-danger' : 'text-success'} fw-bold">R$ ${lucroLiquido.toFixed(2)}</td><td class="text-end"><button onclick="window.removerItemCarrinho(${index})" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button></td></tr>`;
             });
             document.getElementById('pdv-total').innerText = `R$ ${total.toFixed(2)}`;
         }
 
-        window.removerItemCarrinho = function(index) {
-            carrinho.splice(index, 1);
-            renderCarrinho();
-        };
+        function removerItemCarrinho(index) { 
+            carrinho.splice(index, 1); 
+            renderCarrinho(); 
+        }
+
+        function toggleTaxaInput() {
+            let forma = document.getElementById('pdv-forma-pagamento').value;
+            let divTaxa = document.getElementById('div-taxa-maquina');
+            if(forma === 'DEBITO' || forma === 'CREDITO') { divTaxa.classList.remove('d-none'); }
+            else { divTaxa.classList.add('d-none'); }
+        }
 
         async function baixarEstoqueRecursivo(receitaItem, multiplicador) {
             if(!receitaItem) return;
             for (const r of receitaItem) {
                 if (r.tipo === 'produto') {
                     let subProduto = produtos.find(p => p.id == r.id);
-                    if (subProduto && subProduto.receita) {
-                        await baixarEstoqueRecursivo(subProduto.receita, r.qtd * multiplicador);
-                    }
+                    if (subProduto && subProduto.receita) { await baixarEstoqueRecursivo(subProduto.receita, r.qtd * multiplicador); }
                 } else {
                     let ins = insumos.find(x => x.id == r.id);
                     if(ins) {
@@ -522,161 +773,144 @@
         async function finalizarVenda() {
             if(carrinho.length === 0) return alert("Carrinho vazio!");
             mostrarLoad(true);
-            
-            let totalVenda = 0, totalCusto = 0;
-            
-            for (const item of carrinho) {
-                totalVenda += item.preco * item.qtdVenda;
-                totalCusto += item.custoUnitarioReal * item.qtdVenda;
-                if(item.receita) {
-                    await baixarEstoqueRecursivo(item.receita, item.qtdVenda);
-                }
-            }
-
-            let numeroVenda = vendas.length + 1;
-            let codigoVenda = "Venda " + numeroVenda;
-
-            await addDoc(collection(db, "vendas"), { 
-                data: new Date().toISOString(), 
-                codigo: codigoVenda, 
-                itens: carrinho.map(c => `${c.qtdVenda}x ${c.nome}`).join(', '), 
-                total: totalVenda, 
-                lucro: totalVenda - totalCusto 
-            });
-
-            carrinho = []; renderCarrinho(); 
-            document.getElementById('pdv-total').innerText = 'R$ 0,00';
-            
-            atualizarTabelas(); 
-            await init(); 
-            
-            mostrarLoad(false); 
-            alert("Venda " + codigoVenda + " Realizada!");
-        }
-
-        // --- GERAIS (COM AJUSTE DE ESTOQUE MANUAL) ---
-        async function salvarInsumo() {
-            mostrarLoad(true);
-            let idEdicao = document.getElementById('ins-id-edicao').value;
-            let nome = document.getElementById('ins-nome').value;
-            let qtd = parseMoney(document.getElementById('ins-qtd-pacote').value); // Qtd da Compra
-            let valor = parseMoney(document.getElementById('ins-valor-pago').value);
-            let un = document.getElementById('ins-unidade').value;
-            let estoqueManual = parseMoney(document.getElementById('ins-estoque-atual').value); // Estoque Manual (Edição)
-
-            if(!nome || !qtd || !valor) { mostrarLoad(false); return alert("Preencha todos os campos!"); }
-            
-            let custoUnitario = valor / qtd;
-
             try {
-                if (idEdicao) {
-                    await updateDoc(doc(db, "insumos", idEdicao), { 
-                        nome, 
-                        unidade: un, 
-                        valorOriginal: valor, 
-                        qtdOriginal: qtd, 
-                        custoUnitario,
-                        estoque: estoqueManual 
-                    });
-                    alert("Insumo atualizado! Estoque definido para: " + estoqueManual);
+                let formaPagamento = document.getElementById('pdv-forma-pagamento').value;
+                let taxaPercentual = 0;
+                
+                if (formaPagamento === 'CREDITO' || formaPagamento === 'DEBITO') {
+                    taxaPercentual = parseMoney(document.getElementById('pdv-taxa-valor').value);
+                    try { localStorage.setItem('santoEspetoTaxaPadrao', taxaPercentual); } catch(e) {}
+                }
 
-                } else {
-                    await addDoc(collection(db, "insumos"), { 
-                        data: new Date().toISOString(), 
-                        nome, 
-                        unidade: un, 
-                        valorOriginal: valor, 
-                        qtdOriginal: qtd, 
-                        estoque: qtd, 
-                        custoUnitario 
-                    });
-                    alert("Insumo cadastrado!");
+                let totalVenda = 0, totalCusto = 0;
+                for (const item of carrinho) {
+                    totalVenda += item.preco * item.qtdVenda;
+                    totalCusto += item.custoUnitarioReal * item.qtdVenda;
+                    if(item.receita) { await baixarEstoqueRecursivo(item.receita, item.qtdVenda); }
                 }
                 
-                await init();
-                limparFormInsumo(); 
-                cancelarEdicaoInsumo();
-                
-            } catch (e) { 
-                console.error(e); 
-                alert("Erro ao salvar: " + e.message); 
+                let valorTaxa = totalVenda * (taxaPercentual / 100);
+                let lucroLiquido = totalVenda - totalCusto - valorTaxa;
+
+                let numeroVenda = vendas.length + 1;
+                let codigoVenda = "Venda " + numeroVenda;
+
+                await addDoc(collection(db, "vendas"), { 
+                    data: new Date().toISOString(), 
+                    codigo: codigoVenda, 
+                    itens: carrinho.map(c => `${c.qtdVenda}x ${c.nome}`).join(', '), 
+                    total: totalVenda, 
+                    lucro: lucroLiquido,
+                    formaPagamento: formaPagamento,
+                    taxaAplicada: valorTaxa,
+                    percTaxa: taxaPercentual
+                });
+
+                carrinho = []; renderCarrinho(); 
+                document.getElementById('pdv-total').innerText = 'R$ 0,00';
+                atualizarTabelas(); 
+                await init(); 
+                alert(`Venda ${codigoVenda} Realizada! (Taxa: R$ ${valorTaxa.toFixed(2)})`);
+            } catch (e) {
+                console.error(e);
+                alert("Erro ao finalizar venda: " + e.message);
             }
             mostrarLoad(false);
         }
 
-        function editarInsumo(id) {
-            let item = insumos.find(i => i.id == id); 
-            if(!item) return;
-
-            document.getElementById('ins-id-edicao').value = item.id;
-            document.getElementById('ins-nome').value = item.nome;
-            document.getElementById('ins-qtd-pacote').value = item.qtdOriginal;
-            document.getElementById('ins-valor-pago').value = item.valorOriginal.toString().replace('.', ',');
-            document.getElementById('ins-unidade').value = item.unidade;
+        // --- FUNÇÕES DE TRANSAÇÕES E ANOTAÇÕES ---
+        async function registrarMovimentacao(tipo) {
+            mostrarLoad(true);
+            let valor = parseMoney(document.getElementById(tipo === 'SAQUE' ? 'saque-valor' : 'aporte-valor').value);
+            let desc = document.getElementById(tipo === 'SAQUE' ? 'saque-desc' : 'aporte-desc').value;
+            if (!valor || !desc) { mostrarLoad(false); return alert("Preencha tudo!"); }
+            await addDoc(collection(db, "mov_caixa"), { data: new Date().toISOString(), tipo, valor, descricao: desc });
             
-            document.getElementById('ins-estoque-atual').value = item.estoque;
-            document.getElementById('div-estoque-atual').classList.remove('d-none');
-
-            document.getElementById('titulo-form-insumo').innerText = "Editando: " + item.nome;
-            document.getElementById('btn-salvar-insumo').innerHTML = "<i class='fas fa-save'></i>";
-            document.getElementById('btn-salvar-insumo').classList.replace('btn-primary', 'btn-warning');
-            document.getElementById('btn-cancelar-edicao').classList.remove('d-none');
-            
-            calcularCustoPreview();
-            document.getElementById('insumos').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function cancelarEdicaoInsumo() {
-            limparFormInsumo();
-            
-            document.getElementById('div-estoque-atual').classList.add('d-none');
-
-            document.getElementById('titulo-form-insumo').innerText = "Nova Compra";
-            document.getElementById('btn-salvar-insumo').innerHTML = "Cadastrar";
-            document.getElementById('btn-salvar-insumo').classList.replace('btn-warning', 'btn-primary');
-            document.getElementById('btn-cancelar-edicao').classList.add('d-none');
-            document.getElementById('ins-id-edicao').value = "";
-        }
-
-        // --- ANOTAÇÕES & COMPARADOR DE PREÇOS (NOVO) ---
-        window.compararPrecos = function() {
-            let busca = document.getElementById('comp-busca').value.toLowerCase();
-            if(!busca) return alert("Digite algo para buscar!");
-            
-            let resDiv = document.getElementById('resultado-comparacao');
-            resDiv.innerHTML = '';
-
-            let encontrados = listaAnotacoes.filter(a => a.item.toLowerCase().includes(busca));
-            
-            if(encontrados.length === 0) {
-                resDiv.innerHTML = '<div class="alert alert-warning">Nenhum registro encontrado.</div>';
-                return;
+            let idModal = tipo === 'SAQUE' ? '#modalSaque' : '#modalAporte';
+            let el = document.querySelector(idModal);
+            if(window.bootstrap) {
+                let modalInstance = bootstrap.Modal.getInstance(el);
+                if(modalInstance) modalInstance.hide();
             }
-
-            encontrados.sort((a, b) => a.preco - b.preco); // Ordena do menor para o maior
-
-            let html = '<ul class="list-group mt-3">';
-            encontrados.forEach((item, index) => {
-                let destaque = index === 0 ? 'bg-success text-white' : 'bg-light';
-                let tag = index === 0 ? '<span class="badge bg-warning text-dark">Melhor Preço 🏆</span>' : '';
-                
-                html += `
-                    <li class="list-group-item ${destaque} d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>${item.item}</strong> <br>
-                            <small>${item.fornecedor} | ${new Date(item.data).toLocaleDateString('pt-BR')}</small>
-                        </div>
-                        <div class="text-end">
-                            <h5 class="m-0">R$ ${item.preco.toFixed(2)}</h5>
-                            ${tag}
-                        </div>
-                    </li>
-                `;
-            });
-            html += '</ul>';
-            resDiv.innerHTML = html;
+            
+            document.getElementById(tipo === 'SAQUE' ? 'saque-valor' : 'aporte-valor').value = '';
+            await init(); 
+            mostrarLoad(false); 
+            alert("Registrado!");
         }
 
+        async function excluirTransacao(id, tipo) {
+            if(!confirm("Apagar?")) return; 
+            mostrarLoad(true);
+            let col = (tipo === 'VENDA') ? "vendas" : (tipo === 'COMPRA' ? "insumos" : "mov_caixa");
+            await deleteDoc(doc(db, col, id)); 
+            await init(); 
+            mostrarLoad(false);
+        }
+
+        function showSection(id) {
+            document.querySelectorAll('.section').forEach(s => s.classList.add('d-none'));
+            document.getElementById(id).classList.remove('d-none');
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            if(id === 'extrato') filtrarExtrato();
+        }
+
+        // Extrato
+        let chartInstance = null;
+        function limparFiltrosExtrato() {
+            const hoje = new Date();
+            document.getElementById('ext-data-ini').value = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0];
+            document.getElementById('ext-data-fim').value = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split('T')[0];
+            document.getElementById('ext-filtro-tipo').value = 'TODOS';
+            filtrarExtrato();
+        }
+
+        function filtrarExtrato() {
+            let dataIni = new Date(document.getElementById('ext-data-ini').value);
+            let dataFim = new Date(document.getElementById('ext-data-fim').value);
+            let tipoFiltro = document.getElementById('ext-filtro-tipo').value; 
+            dataFim.setHours(23, 59, 59);
+            let transacoes = [];
+            
+            vendas.forEach(v => transacoes.push({ id: v.id, data: new Date(v.data), tipo: 'VENDA', codigo: v.codigo || '-', descricao: `${v.itens} (${v.formaPagamento||'DINHEIRO'})`, valor: v.total, taxa: v.taxaAplicada||0, classe: 'text-venda' }));
+            insumos.forEach(i => transacoes.push({ id: i.id, data: i.data ? new Date(i.data) : new Date(), tipo: 'COMPRA', codigo: '-', descricao: i.nome, valor: -(i.valorOriginal||0), taxa: 0, classe: 'text-compra' }));
+            movCaixa.forEach(m => transacoes.push({ id: m.id, data: new Date(m.data), tipo: m.tipo, codigo: '-', descricao: m.descricao, valor: m.tipo === 'SAQUE' ? -m.valor : m.valor, taxa: 0, classe: m.tipo === 'SAQUE' ? 'text-saque' : 'text-aporte' }));
+            
+            let filtradas = transacoes.filter(t => {
+                let dataOk = t.data >= dataIni && t.data <= dataFim;
+                let tipoOk = true;
+                if (tipoFiltro === 'MOV') { tipoOk = (t.tipo === 'SAQUE' || t.tipo === 'APORTE'); } 
+                else if (tipoFiltro !== 'TODOS') { tipoOk = (t.tipo === tipoFiltro); }
+                return dataOk && tipoOk;
+            }).sort((a, b) => b.data - a.data);
+
+            let tbody = document.getElementById('tabela-extrato'); 
+            tbody.innerHTML = '';
+            let tEnt=0, tSai=0, tApo=0, tSaq=0, tTax=0;
+            
+            filtradas.forEach(t => {
+                if(t.tipo === 'VENDA') { tEnt += t.valor; tTax += t.taxa; }
+                if(t.tipo === 'COMPRA') tSai += Math.abs(t.valor);
+                if(t.tipo === 'APORTE') tApo += t.valor;
+                if(t.tipo === 'SAQUE') tSaq += Math.abs(t.valor);
+                
+                let textoValor = `R$ ${Math.abs(t.valor).toFixed(2)}`;
+                if(t.taxa > 0) textoValor += ` <small class="text-danger">(-R$${t.taxa.toFixed(2)})</small>`;
+
+                tbody.innerHTML += `<tr><td>${t.data.toLocaleDateString()}</td><td class="${t.classe}"><strong>${t.codigo !== '-' ? t.codigo : t.tipo}</strong></td><td>${t.descricao}</td><td class="${t.valor>=0?'text-success':'text-danger'}">${textoValor}</td><td class="text-end"><button onclick="window.excluirTransacao('${t.id}', '${t.tipo}')" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button></td></tr>`;
+            });
+
+            document.getElementById('res-entradas').innerText = `R$ ${tEnt.toFixed(2)}`;
+            document.getElementById('res-saidas').innerText = `R$ ${tSai.toFixed(2)}`;
+            document.getElementById('res-taxas').innerText = `R$ ${tTax.toFixed(2)}`;
+            document.getElementById('res-saldo').innerText = `R$ ${(tEnt+tApo-tSai-tSaq-tTax).toFixed(2)}`;
+            
+            const ctx = document.getElementById('chartExtrato').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, { type: 'bar', data: { labels: ['Vendas', 'Compras', 'Taxas', 'Saldo'], datasets: [{ label: 'R$', data: [tEnt, tSai, tTax, (tEnt+tApo-tSai-tSaq-tTax)], backgroundColor: ['#2e7d32', '#c62828', '#ff9800', '#0288d1'] }] } });
+        }
+
+        // Anotações
         async function salvarAnotacao() {
             mostrarLoad(true);
             let idEdicao = document.getElementById('anot-id-edicao').value;
@@ -687,36 +921,6 @@
             let data = document.getElementById('anot-data').value;
 
             if(!item || !fornecedor || isNaN(preco) || !data) { mostrarLoad(false); return alert("Preencha dados!"); }
-
-            // VERIFICAÇÃO DE PREÇO (NOVO)
-            // Procura itens com nome similar (contém ou está contido)
-            let termo = item.toLowerCase();
-            let similares = listaAnotacoes.filter(a => {
-                let nomeAntigo = a.item.toLowerCase();
-                return (nomeAntigo.includes(termo) || termo.includes(nomeAntigo)) && a.id !== idEdicao;
-            });
-
-            if (similares.length > 0) {
-                similares.sort((a,b) => a.preco - b.preco);
-                let melhorOferta = similares[0];
-
-                if (preco > melhorOferta.preco) {
-                    let msg = `⚠️ ALERTA DE PREÇO ALTO!\n\n`;
-                    msg += `Você já comprou "${melhorOferta.item}" mais barato!\n`;
-                    msg += `--------------------------------------\n`;
-                    msg += `💰 Preço Atual: R$ ${preco.toFixed(2)}\n`;
-                    msg += `📉 Melhor Preço: R$ ${melhorOferta.preco.toFixed(2)}\n`;
-                    msg += `🏭 Fornecedor: ${melhorOferta.fornecedor}\n`;
-                    msg += `📅 Data: ${new Date(melhorOferta.data).toLocaleDateString('pt-BR')}\n`;
-                    msg += `--------------------------------------\n`;
-                    msg += `Deseja salvar mesmo pagando mais caro?`;
-
-                    if (!confirm(msg)) {
-                        mostrarLoad(false);
-                        return; // Cancela o salvamento
-                    }
-                }
-            }
 
             let dados = { item, fornecedor, contato, preco, data };
             try {
@@ -772,208 +976,109 @@
         }
         function limparFiltroAnotacoes() { document.getElementById('filtro-mes-anotacao').value = ""; renderAnotacoes(); }
 
-        function editarProduto(id) {
-            let prod = produtos.find(p => p.id === id); if(!prod) return;
-            document.getElementById('prod-id-edicao').value = prod.id;
-            document.getElementById('prod-nome').value = prod.nome;
-            document.getElementById('prod-preco').value = prod.preco.toString().replace('.', ',');
-            
-            ingredientesTemp = prod.receita ? JSON.parse(JSON.stringify(prod.receita)) : [];
-            ingredientesTemp.forEach(i => { if(!i.tipo) i.tipo = 'insumo'; });
-
-            renderIngredientesTemp();
-            document.getElementById('titulo-form-prod').innerText = "Editando: " + prod.nome;
-            document.getElementById('btn-salvar-prod').innerText = "Salvar Alteração";
-            document.getElementById('btn-salvar-prod').classList.replace('btn-success', 'btn-warning');
-            document.getElementById('btn-cancelar-prod').classList.remove('d-none');
-        }
-
-        function cancelarEdicaoProduto() {
-            document.getElementById('prod-id-edicao').value = "";
-            document.getElementById('prod-nome').value = "";
-            document.getElementById('prod-preco').value = "";
-            ingredientesTemp = []; renderIngredientesTemp();
-            document.getElementById('titulo-form-prod').innerText = "Novo Produto";
-            document.getElementById('btn-salvar-prod').innerText = "Salvar Produto";
-            document.getElementById('btn-salvar-prod').classList.replace('btn-warning', 'btn-success');
-            document.getElementById('btn-cancelar-prod').classList.add('d-none');
-        }
-
-        function calcularCustoPreview() {
-            let valor = parseMoney(document.getElementById('ins-valor-pago').value);
-            let qtd = parseMoney(document.getElementById('ins-qtd-pacote').value);
-            let custo = qtd > 0 ? valor / qtd : 0;
-            document.getElementById('preview-custo').innerText = `Calculadora: R$ ${custo.toFixed(4)} / unidade`;
-        }
-
-        function limparFormInsumo() {
-            document.getElementById('ins-nome').value = ''; document.getElementById('ins-valor-pago').value = '';
-            document.getElementById('ins-qtd-pacote').value = ''; document.getElementById('preview-custo').innerText = '';
-            document.getElementById('ins-estoque-atual').value = ''; 
-        }
-        async function excluirInsumo(id) {
-            if(!confirm("Excluir?")) return; mostrarLoad(true);
-            await deleteDoc(doc(db, "insumos", id)); await init(); mostrarLoad(false);
-        }
-        async function excluirProduto(id) {
-            if(!confirm("Excluir?")) return; mostrarLoad(true);
-            await deleteDoc(doc(db, "produtos", id)); await init(); mostrarLoad(false);
-        }
-        async function registrarMovimentacao(tipo) {
-            mostrarLoad(true);
-            let valor = parseMoney(document.getElementById(tipo === 'SAQUE' ? 'saque-valor' : 'aporte-valor').value);
-            let desc = document.getElementById(tipo === 'SAQUE' ? 'saque-desc' : 'aporte-desc').value;
-            if (!valor || !desc) { mostrarLoad(false); return alert("Preencha tudo!"); }
-            await addDoc(collection(db, "mov_caixa"), { data: new Date().toISOString(), tipo, valor, descricao: desc });
-            let el = document.querySelector(tipo === 'SAQUE' ? '#modalSaque' : '#modalAporte');
-            bootstrap.Modal.getInstance(el).hide();
-            document.getElementById(tipo === 'SAQUE' ? 'saque-valor' : 'aporte-valor').value = '';
-            await init(); mostrarLoad(false); alert("Registrado!");
-        }
-        
-        async function excluirTransacao(id, tipo) {
-            if(!confirm("Apagar?")) return; mostrarLoad(true);
-            let col = (tipo === 'VENDA') ? "vendas" : (tipo === 'COMPRA' ? "insumos" : "mov_caixa");
-            await deleteDoc(doc(db, col, id)); await init(); mostrarLoad(false);
-        }
-        function showSection(id) {
-            document.querySelectorAll('.section').forEach(s => s.classList.add('d-none'));
-            document.getElementById(id).classList.remove('d-none');
-            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-            if(id === 'extrato') filtrarExtrato();
-        }
-        function mostrarLoad(ativo) { document.getElementById('loading-overlay').style.display = ativo ? 'flex' : 'none'; }
-        
-        function atualizarTabelas() {
-            let selInsumo = document.getElementById('select-insumo-add'); 
-            let selProd = document.getElementById('select-produto-add');
-            
-            selInsumo.innerHTML = '';
-            insumos.forEach(i => selInsumo.innerHTML += `<option value="${i.id}">${i.nome}</option>`);
-
-            selProd.innerHTML = '';
-            produtos.forEach(p => selProd.innerHTML += `<option value="${p.id}">${p.nome}</option>`);
-
-            document.getElementById('tabela-insumos').innerHTML = insumos.map(i => `<tr><td>${i.nome}</td><td>R$ ${(i.valorOriginal||0).toFixed(2)}</td><td>R$ ${i.custoUnitario.toFixed(3)}</td><td>${i.estoque.toFixed(1)} ${i.unidade}</td><td class="text-end"><button onclick="window.editarInsumo('${i.id}')" class="btn btn-sm btn-outline-warning"><i class="fas fa-pen"></i></button> <button onclick="window.excluirInsumo('${i.id}')" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button></td></tr>`).join('');
-            
-            let sPdv = document.getElementById('pdv-produto'); sPdv.innerHTML = '';
-            document.getElementById('tabela-produtos').innerHTML = produtos.map(p => { 
-                sPdv.innerHTML += `<option value="${p.id}">${p.nome}</option>`; 
-                let lucro = p.preco - p.custo;
-                return `<tr><td>${p.nome}</td><td>R$ ${p.preco.toFixed(2)}</td><td class="text-success fw-bold">R$ ${lucro.toFixed(2)}</td><td class="text-end"><button onclick="window.editarProduto('${p.id}')" class="btn btn-sm btn-outline-warning"><i class="fas fa-pen"></i></button> <button onclick="window.excluirProduto('${p.id}')" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button></td></tr>`; 
-            }).join('');
-        }
-        function atualizarDashboard() {
-            let totalFat = vendas.reduce((acc, v) => acc + v.total, 0);
-            let totalGastos = insumos.reduce((acc, i) => acc + (i.valorOriginal || 0), 0);
-            let totalLucro = vendas.reduce((acc, v) => acc + v.lucro, 0);
-            let totalAportes = movCaixa.filter(m => m.tipo === 'APORTE').reduce((acc, m) => acc + m.valor, 0);
-            let totalSaques = movCaixa.filter(m => m.tipo === 'SAQUE').reduce((acc, m) => acc + m.valor, 0);
-            document.getElementById('dash-faturamento').innerText = `R$ ${totalFat.toFixed(2)}`;
-            document.getElementById('dash-gastos').innerText = `R$ ${totalGastos.toFixed(2)}`;
-            document.getElementById('dash-lucro').innerText = `R$ ${totalLucro.toFixed(2)}`;
-            document.getElementById('dash-caixa').innerText = `R$ ${(totalFat + totalAportes - totalGastos - totalSaques).toFixed(2)}`;
-        }
-        let chartInstance = null;
-        function limparFiltrosExtrato() {
-            const hoje = new Date();
-            document.getElementById('ext-data-ini').value = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0];
-            document.getElementById('ext-data-fim').value = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split('T')[0];
-            document.getElementById('ext-filtro-tipo').value = 'TODOS';
-            filtrarExtrato();
-        }
-        function filtrarExtrato() {
-            let dataIni = new Date(document.getElementById('ext-data-ini').value);
-            let dataFim = new Date(document.getElementById('ext-data-fim').value);
-            let tipoFiltro = document.getElementById('ext-filtro-tipo').value; 
-
-            dataFim.setHours(23, 59, 59);
-            let transacoes = [];
-            
-            vendas.forEach(v => transacoes.push({ 
-                id: v.id, 
-                data: new Date(v.data), 
-                tipo: 'VENDA', 
-                codigo: v.codigo || '-', 
-                descricao: v.itens, 
-                valor: v.total, 
-                classe: 'text-venda' 
-            }));
-            
-            insumos.forEach(i => transacoes.push({ id: i.id, data: i.data ? new Date(i.data) : new Date(), tipo: 'COMPRA', codigo: '-', descricao: i.nome, valor: -(i.valorOriginal||0), classe: 'text-compra' }));
-            movCaixa.forEach(m => transacoes.push({ id: m.id, data: new Date(m.data), tipo: m.tipo, codigo: '-', descricao: m.descricao, valor: m.tipo === 'SAQUE' ? -m.valor : m.valor, classe: m.tipo === 'SAQUE' ? 'text-saque' : 'text-aporte' }));
-            
-            let filtradas = transacoes.filter(t => {
-                let dataOk = t.data >= dataIni && t.data <= dataFim;
-                let tipoOk = true;
-                if (tipoFiltro === 'MOV') {
-                    tipoOk = (t.tipo === 'SAQUE' || t.tipo === 'APORTE');
-                } else if (tipoFiltro !== 'TODOS') {
-                    tipoOk = (t.tipo === tipoFiltro);
-                }
-                return dataOk && tipoOk;
-            }).sort((a, b) => b.data - a.data);
-
-            let tbody = document.getElementById('tabela-extrato'); tbody.innerHTML = '';
-            let tEnt=0, tSai=0, tApo=0, tSaq=0;
-            
-            filtradas.forEach(t => {
-                if(t.tipo === 'VENDA') tEnt += t.valor;
-                if(t.tipo === 'COMPRA') tSai += Math.abs(t.valor);
-                if(t.tipo === 'APORTE') tApo += t.valor;
-                if(t.tipo === 'SAQUE') tSaq += Math.abs(t.valor);
-                
-                tbody.innerHTML += `
-                    <tr>
-                        <td>${t.data.toLocaleDateString()}</td>
-                        <td class="${t.classe}"><strong>${t.codigo !== '-' ? t.codigo : t.tipo}</strong></td>
-                        <td>${t.descricao}</td>
-                        <td class="${t.valor>=0?'text-success':'text-danger'}">R$ ${Math.abs(t.valor).toFixed(2)}</td>
-                        <td class="text-end"><button onclick="window.excluirTransacao('${t.id}', '${t.tipo}')" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button></td>
-                    </tr>
-                `;
+        function compararPrecos() {
+            let busca = document.getElementById('comp-busca').value.toLowerCase();
+            if(!busca) return alert("Digite algo para buscar!");
+            let resDiv = document.getElementById('resultado-comparacao');
+            resDiv.innerHTML = '';
+            let encontrados = listaAnotacoes.filter(a => a.item.toLowerCase().includes(busca));
+            if(encontrados.length === 0) { resDiv.innerHTML = '<div class="alert alert-warning">Nenhum registro encontrado.</div>'; return; }
+            encontrados.sort((a, b) => a.preco - b.preco);
+            let html = '<ul class="list-group mt-3">';
+            encontrados.forEach((item, index) => {
+                let destaque = index === 0 ? 'bg-success text-white' : 'bg-light';
+                let tag = index === 0 ? '<span class="badge bg-warning text-dark">Melhor Preço 🏆</span>' : '';
+                html += `<li class="list-group-item ${destaque} d-flex justify-content-between align-items-center"><div><strong>${item.item}</strong> <br><small>${item.fornecedor} | ${new Date(item.data).toLocaleDateString('pt-BR')}</small></div><div class="text-end"><h5 class="m-0">R$ ${item.preco.toFixed(2)}</h5>${tag}</div></li>`;
             });
-
-            document.getElementById('res-entradas').innerText = `R$ ${tEnt.toFixed(2)}`;
-            document.getElementById('res-saidas').innerText = `R$ ${tSai.toFixed(2)}`;
-            document.getElementById('res-saldo').innerText = `R$ ${(tEnt+tApo-tSai-tSaq).toFixed(2)}`;
-            const ctx = document.getElementById('chartExtrato').getContext('2d');
-            if (chartInstance) chartInstance.destroy();
-            chartInstance = new Chart(ctx, { type: 'bar', data: { labels: ['Vendas', 'Compras', 'Aportes', 'Saques'], datasets: [{ label: 'R$', data: [tEnt, tSai, tApo, tSaq], backgroundColor: ['#2e7d32', '#c62828', '#0288d1', '#d32f2f'] }] } });
+            html += '</ul>';
+            resDiv.innerHTML = html;
         }
 
-        // --- EXPORTAR ---
+        // --- INIT PRINCIPAL ---
+        async function init() {
+            // Garante que o load some mesmo se der erro
+            setTimeout(() => { 
+                const overlay = document.getElementById('loading-overlay');
+                if(overlay) overlay.style.display = 'none'; 
+            }, 10000);
+
+            await carregarDados();
+            recalcularCustosProdutos();
+            atualizarTabelas();
+            atualizarDashboard();
+            limparFiltrosExtrato();
+            renderAnotacoes();
+            
+            // Listeners
+            try {
+                let taxaSalva = localStorage.getItem('santoEspetoTaxaPadrao');
+                if(taxaSalva) document.getElementById('pdv-taxa-valor').value = taxaSalva;
+            } catch(e){}
+
+            const btnAdd = document.getElementById('btn-add-ingrediente');
+            if(btnAdd) {
+                const newBtn = btnAdd.cloneNode(true);
+                btnAdd.parentNode.replaceChild(newBtn, btnAdd);
+                newBtn.addEventListener('click', addItemAoProduto);
+            }
+            
+            const btnSalvarProd = document.getElementById('btn-salvar-prod');
+            if(btnSalvarProd) {
+                 const newBtnS = btnSalvarProd.cloneNode(true);
+                 btnSalvarProd.parentNode.replaceChild(newBtnS, btnSalvarProd);
+                 newBtnS.addEventListener('click', salvarProdutoFinal);
+            }
+
+            const inputPreco = document.getElementById('prod-preco');
+            if(inputPreco) inputPreco.addEventListener('input', renderIngredientesTemp);
+
+            document.getElementById('ins-valor-pago').addEventListener('input', calcularCustoPreview);
+            document.getElementById('ins-qtd-pacote').addEventListener('input', calcularCustoPreview);
+            document.getElementById('ins-margem').addEventListener('input', calcularCustoPreview);
+            document.getElementById('anot-data').value = new Date().toISOString().split('T')[0];
+            
+            mostrarLoad(false);
+        }
+
+        // --- EXPORTANDO PARA O WINDOW (GLOBAL) ---
+        // Isso conecta o HTML ao JavaScript
         window.salvarInsumo = salvarInsumo;
         window.editarInsumo = editarInsumo;
         window.excluirInsumo = excluirInsumo;
         window.cancelarEdicaoInsumo = cancelarEdicaoInsumo;
         window.calcularCustoPreview = calcularCustoPreview;
         
-        window.addItemAoProduto = addItemAoProduto; 
+        window.toggleTipoAdd = toggleTipoAdd;
+        window.addItemAoProduto = addItemAoProduto;
+        window.removerIngrediente = removerIngrediente;
         window.salvarProdutoFinal = salvarProdutoFinal;
         window.editarProduto = editarProduto;
         window.excluirProduto = excluirProduto;
         window.cancelarEdicaoProduto = cancelarEdicaoProduto;
         
         window.addCarrinho = addCarrinho;
+        window.removerItemCarrinho = removerItemCarrinho;
+        window.toggleTaxaInput = toggleTaxaInput;
         window.finalizarVenda = finalizarVenda;
+        
         window.registrarMovimentacao = registrarMovimentacao;
         window.excluirTransacao = excluirTransacao;
+        
         window.showSection = showSection;
         window.filtrarExtrato = filtrarExtrato;
         window.limparFiltrosExtrato = limparFiltrosExtrato;
-
+        
         window.salvarAnotacao = salvarAnotacao;
         window.editarAnotacao = editarAnotacao;
         window.excluirAnotacao = excluirAnotacao;
         window.cancelarEdicaoAnotacao = cancelarEdicaoAnotacao;
         window.renderAnotacoes = renderAnotacoes;
         window.limparFiltroAnotacoes = limparFiltroAnotacoes;
-        
-        window.compararPrecos = compararPrecos; // Exportando nova função
+        window.compararPrecos = compararPrecos;
 
-        // Ativar Init
+        // Inicia
         init();
+
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
