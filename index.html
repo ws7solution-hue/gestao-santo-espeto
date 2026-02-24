@@ -213,7 +213,20 @@
                         <button type="button" id="btn-salvar-prod" class="btn btn-success w-100">Salvar Produto/Combo</button>
                     </div>
                 </div>
-                <div class="col-md-7"><div class="card card-custom p-3"><table class="table table-hover align-middle"><thead class="table-light"><tr><th>Produto</th><th>Venda</th><th>Lucro Real*</th><th class="text-end">Ações</th></tr></thead><tbody id="tabela-produtos"></tbody></table><small class="text-muted">*Lucro considerando a margem de perda dos insumos.</small></div></div>
+                <div class="col-md-7">
+                    <div class="card card-custom p-3">
+                        <div class="input-group mb-3 shadow-sm">
+                            <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                            <input type="text" id="busca-produto-cardapio" class="form-control border-start-0" placeholder="Procurar produto no cardápio..." onkeyup="filtrarTabelaProdutos()">
+                        </div>
+                        
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light"><tr><th>Produto</th><th>Custo*</th><th>Venda</th><th>Lucro Real*</th><th class="text-end">Ações</th></tr></thead>
+                            <tbody id="tabela-produtos"></tbody>
+                        </table>
+                        <small class="text-muted">*Valores considerando a margem de perda dos insumos.</small>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -475,9 +488,38 @@
             if(tbodyProdutos) {
                 tbodyProdutos.innerHTML = produtos.map(p => { 
                     if(sPdv) sPdv.innerHTML += `<option value="${p.id}">${p.nome}</option>`; 
-                    let lucro = p.preco - (p.custo || 0); 
-                    return `<tr><td>${p.nome}</td><td>R$ ${p.preco.toFixed(2)}</td><td class="${lucro < 0 ? 'text-danger' : 'text-success'} fw-bold">R$ ${lucro.toFixed(2)}</td><td class="text-end"><button onclick="window.editarProduto('${p.id}')" class="btn btn-sm btn-outline-warning"><i class="fas fa-pen"></i></button> <button onclick="window.excluirProduto('${p.id}')" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button></td></tr>`; 
+                    let custo = p.custo || 0;
+                    let lucro = p.preco - custo; 
+                    return `<tr>
+                                <td>${p.nome}</td>
+                                <td class="text-danger fw-bold">R$ ${custo.toFixed(2)}</td>
+                                <td>R$ ${p.preco.toFixed(2)}</td>
+                                <td class="${lucro < 0 ? 'text-danger' : 'text-success'} fw-bold">R$ ${lucro.toFixed(2)}</td>
+                                <td class="text-end">
+                                    <button onclick="window.editarProduto('${p.id}')" class="btn btn-sm btn-outline-warning"><i class="fas fa-pen"></i></button> 
+                                    <button onclick="window.excluirProduto('${p.id}')" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                                </td>
+                            </tr>`; 
                 }).join('');
+            }
+        }
+
+        function filtrarTabelaProdutos() {
+            let input = document.getElementById("busca-produto-cardapio");
+            let filter = input.value.toUpperCase();
+            let table = document.getElementById("tabela-produtos");
+            let tr = table.getElementsByTagName("tr");
+
+            for (let i = 0; i < tr.length; i++) {
+                let td = tr[i].getElementsByTagName("td")[0];
+                if (td) {
+                    let textValue = td.textContent || td.innerText;
+                    if (textValue.toUpperCase().indexOf(filter) > -1) {
+                        tr[i].style.display = "";
+                    } else {
+                        tr[i].style.display = "none";
+                    }
+                }
             }
         }
 
@@ -485,10 +527,7 @@
             let totalFat = vendas.reduce((acc, v) => acc + v.total, 0);
             let totalTaxas = vendas.reduce((acc, v) => acc + (v.taxaAplicada || 0), 0);
             
-            // MUDANÇA: Gastos agora vêm das ANOTAÇÕES (Gasto Real)
             let totalGastos = listaAnotacoes.reduce((acc, a) => acc + (a.valorTotal || 0), 0);
-            
-            // Lucro considera gasto real, não o teórico
             let totalLucro = totalFat - totalTaxas - totalGastos; 
             
             let totalAportes = movCaixa.filter(m => m.tipo === 'APORTE').reduce((acc, m) => acc + m.valor, 0);
@@ -502,7 +541,6 @@
             document.getElementById('dash-caixa').innerText = `R$ ${caixaReal.toFixed(2)}`;
         }
 
-        // Funções de Insumos
         function calcularCustoPreview() {
             let valor = parseMoney(document.getElementById('ins-valor-pago').value);
             let qtd = parseMoney(document.getElementById('ins-qtd-pacote').value);
@@ -584,7 +622,6 @@
 
         async function excluirInsumo(id) { if(!confirm("Excluir?")) return; mostrarLoad(true); await deleteDoc(doc(db, "insumos", id)); await init(); mostrarLoad(false); }
 
-        // Produtos
         function toggleTipoAdd() {
             let tipo = document.querySelector('input[name="tipoItemAdd"]:checked').value;
             let selInsumo = document.getElementById('select-insumo-add');
@@ -618,7 +655,7 @@
             let ul = document.getElementById('lista-ingredientes-temp');
             let precoVenda = parseMoney(document.getElementById('prod-preco').value);
             let custoTotal = ingredientesTemp.reduce((acc, i) => acc + i.custoTotal, 0);
-            ul.innerHTML = ingredientesTemp.map((i, idx) => `<li class="list-group-item d-flex justify-content-between p-1"><span>${i.qtd}x ${i.nome} <span class="badge bg-secondary">${i.tipo === 'produto' ? 'COMBO' : 'MP'}</span></span><span><small class="text-muted">R$ ${i.custoTotal.toFixed(2)}</small> <i class="fas fa-times text-danger ms-2" onclick="window.removerIngrediente(${idx})" style="cursor:pointer"></i></span></li>`).join('');
+            ul.innerHTML = ingredientesTemp.map((i, idx) => `<li class="list-group-item d-flex justify-content-between p-1"><span>${i.qtd}<span>${i.nome} <span class="badge bg-secondary">${i.tipo === 'produto' ? 'COMBO' : 'MP'}</span></span><span><small class="text-muted">R$ ${i.custoTotal.toFixed(2)}</small> <i class="fas fa-times text-danger ms-2" onclick="window.removerIngrediente(${idx})" style="cursor:pointer"></i></span></li>`).join('');
             document.getElementById('prod-custo-total').innerText = `R$ ${custoTotal.toFixed(2)}`;
             let lucro = precoVenda - custoTotal;
             let elLucro = document.getElementById('prod-lucro-previsto');
@@ -658,7 +695,7 @@
 
         function cancelarEdicaoProduto() {
             document.getElementById('prod-id-edicao').value = ""; document.getElementById('prod-nome').value = "";
-            document.getElementById('prod-preco').value = ""; ingredientsTemp = []; renderIngredientesTemp();
+            document.getElementById('prod-preco').value = ""; ingredientesTemp = []; renderIngredientesTemp();
             document.getElementById('titulo-form-prod').innerText = "Novo Produto";
             const btn = document.getElementById('btn-salvar-prod'); btn.innerText = "Salvar Produto"; btn.classList.replace('btn-warning', 'btn-success');
             document.getElementById('btn-cancelar-prod').classList.add('d-none');
@@ -666,7 +703,6 @@
 
         async function excluirProduto(id) { if(!confirm("Excluir?")) return; mostrarLoad(true); await deleteDoc(doc(db, "produtos", id)); await init(); mostrarLoad(false); }
 
-        // PDV
         function addCarrinho() {
             let id = document.getElementById('pdv-produto').value;
             let qtd = parseInt(document.getElementById('pdv-qtd').value);
@@ -745,7 +781,6 @@
             mostrarLoad(false);
         }
 
-        // Transações
         async function registrarMovimentacao(tipo) {
             mostrarLoad(true);
             let valor = parseMoney(document.getElementById(tipo === 'SAQUE' ? 'saque-valor' : 'aporte-valor').value);
@@ -772,7 +807,6 @@
             if(id === 'extrato') filtrarExtrato();
         }
 
-        // Extrato
         let chartInstance = null;
         function limparFiltrosExtrato() {
             const hoje = new Date();
@@ -791,7 +825,6 @@
             
             vendas.forEach(v => transacoes.push({ id: v.id, data: new Date(v.data), tipo: 'VENDA', codigo: v.codigo || '-', descricao: `${v.itens} (${v.formaPagamento||'DINHEIRO'})`, valor: v.total, taxa: v.taxaAplicada||0, classe: 'text-venda' }));
             
-            // MUDANÇA: 'COMPRA' no extrato agora vem das ANOTAÇÕES
             listaAnotacoes.forEach(a => {
                 transacoes.push({ id: a.id, data: new Date(a.data), tipo: 'COMPRA', codigo: '-', descricao: `${a.item} (${a.fornecedor})`, valor: -(a.valorTotal||0), taxa: 0, classe: 'text-compra' });
             });
@@ -832,7 +865,6 @@
             chartInstance = new Chart(ctx, { type: 'bar', data: { labels: ['Vendas', 'Compras', 'Taxas', 'Saldo'], datasets: [{ label: 'R$', data: [tEnt, tSai, tTax, (tEnt+tApo-tSai-tSaq-tTax)], backgroundColor: ['#2e7d32', '#c62828', '#ff9800', '#0288d1'] }] } });
         }
 
-        // Anotações
         function atualizarLabelQtd() {
             let tipo = document.getElementById('anot-medida').value;
             let lblQtd = document.getElementById('lbl-qtd-anot');
@@ -986,6 +1018,7 @@
         window.salvarAnotacao = salvarAnotacao; window.editarAnotacao = editarAnotacao; window.excluirAnotacao = excluirAnotacao;
         window.cancelarEdicaoAnotacao = cancelarEdicaoAnotacao; window.renderAnotacoes = renderAnotacoes; window.limparFiltroAnotacoes = limparFiltroAnotacoes;
         window.compararPrecos = compararPrecos; window.calcularTotalAnotacao = calcularTotalAnotacao; window.atualizarLabelQtd = atualizarLabelQtd;
+        window.filtrarTabelaProdutos = filtrarTabelaProdutos;
 
         init();
     </script>
